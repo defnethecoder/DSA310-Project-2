@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>WHOOP Recovery Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --card: #1a1a26;
+    --border: rgba(255,255,255,0.08);
+    --text: #f0f0f8;
+    --muted: #8888aa;
+    --green: #1fc985;
+    --green-dim: rgba(31,201,133,0.15);
+    --amber: #f5a623;
+    --amber-dim: rgba(245,166,35,0.15);
+    --purple: #9b7ff4;
+    --purple-dim: rgba(155,127,244,0.15);
+    --blue: #4a9eff;
+    --red: #ff5a5a;
+    --font: 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 32px 16px;
+  }
+
+  /* ── Header ── */
+  header {
+    width: 100%;
+    max-width: 420px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 28px;
+  }
+  header h1 { font-size: 20px; font-weight: 600; letter-spacing: -0.4px; }
+  header p  { font-size: 13px; color: var(--muted); }
+  .avatar {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--purple), var(--blue));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 600;
+  }
+
+  /* ── Recovery ring card ── */
+  .ring-card {
+    width: 100%; max-width: 420px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 28px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 28px;
+  }
+  .ring-wrap { flex-shrink: 0; position: relative; }
+  #ring-svg { display: block; }
+  .ring-label {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    pointer-events: none;
+  }
+  .ring-label .score {
+    font-size: 38px; font-weight: 700; line-height: 1;
+    letter-spacing: -2px;
+  }
+  .ring-label .sub  { font-size: 11px; color: var(--muted); margin-top: 2px; text-transform: uppercase; letter-spacing: 1px; }
+
+  .ring-meta { flex: 1; }
+  .ring-meta h2 { font-size: 18px; font-weight: 600; margin-bottom: 4px; }
+  .ring-meta .advice { font-size: 13px; color: var(--muted); line-height: 1.5; margin-bottom: 16px; }
+  .pill-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .pill {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 4px 12px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  /* ── 3-metric row ── */
+  .metrics-row {
+    width: 100%; max-width: 420px;
+    display: grid; grid-template-columns: 1fr 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .metric-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 16px 14px;
+    position: relative;
+    overflow: hidden;
+  }
+  .metric-card::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    border-radius: 16px 16px 0 0;
+  }
+  .metric-card.green::before { background: var(--green); }
+  .metric-card.amber::before { background: var(--amber); }
+  .metric-card.purple::before { background: var(--purple); }
+
+  .metric-card .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px; }
+  .metric-card .val   { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; line-height: 1; }
+  .metric-card .unit  { font-size: 12px; color: var(--muted); margin-top: 3px; }
+  .metric-card .delta {
+    display: inline-flex; align-items: center; gap: 3px;
+    font-size: 11px; margin-top: 6px;
+    padding: 2px 8px; border-radius: 10px;
+  }
+  .delta.up   { background: rgba(31,201,133,0.12); color: var(--green); }
+  .delta.down { background: rgba(255,90,90,0.12); color: var(--red); }
+
+  /* ── Sleep stages card ── */
+  .sleep-card {
+    width: 100%; max-width: 420px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 22px;
+    margin-bottom: 16px;
+  }
+  .card-title {
+    font-size: 13px; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.8px;
+    margin-bottom: 16px;
+  }
+  .sleep-bar-track {
+    height: 10px; border-radius: 5px;
+    background: rgba(255,255,255,0.06);
+    overflow: hidden; display: flex;
+    margin-bottom: 12px;
+  }
+  .sleep-bar-track div { height: 100%; transition: width 0.6s cubic-bezier(.4,0,.2,1); }
+  .sleep-legend { display: flex; gap: 14px; flex-wrap: wrap; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  .legend-dot  { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+
+  /* ── Sparkline card ── */
+  .sparkline-card {
+    width: 100%; max-width: 420px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 22px;
+    margin-bottom: 16px;
+  }
+  .spark-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
+  .spark-header span { font-size: 12px; color: var(--muted); }
+  #sparkline-svg { width: 100%; overflow: visible; display: block; margin-top: 10px; }
+
+  /* ── Strain card ── */
+  .strain-card {
+    width: 100%; max-width: 420px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 22px;
+    margin-bottom: 24px;
+  }
+  .strain-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .strain-val { font-size: 28px; font-weight: 700; letter-spacing: -1px; color: var(--amber); }
+  .strain-max { font-size: 14px; color: var(--muted); }
+  .strain-track {
+    height: 8px; border-radius: 4px;
+    background: rgba(255,255,255,0.06);
+    overflow: hidden;
+  }
+  .strain-fill {
+    height: 100%;
+    border-radius: 4px;
+    background: linear-gradient(90deg, #4a9eff, #f5a623, #ff5a5a);
+    transition: width 0.8s cubic-bezier(.4,0,.2,1);
+  }
+  .strain-zones { display: flex; justify-content: space-between; margin-top: 6px; }
+  .strain-zones span { font-size: 10px; color: var(--muted); }
+
+  /* ── HR zone bar ── */
+  .zone-card {
+    width: 100%; max-width: 420px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 22px;
+    margin-bottom: 24px;
+  }
+  .zone-rows { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+  .zone-row  { display: grid; grid-template-columns: 28px 1fr 36px; align-items: center; gap: 10px; }
+  .zone-row .zlabel { font-size: 11px; color: var(--muted); text-align: right; }
+  .zone-track { height: 8px; border-radius: 4px; background: rgba(255,255,255,0.06); }
+  .zone-bar   { height: 100%; border-radius: 4px; transition: width 0.6s cubic-bezier(.4,0,.2,1); }
+  .zone-row .zmin { font-size: 11px; color: var(--muted); text-align: right; }
+
+  /* ── Bottom nav ── */
+  nav {
+    width: 100%; max-width: 420px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 14px 20px;
+    display: flex;
+    justify-content: space-around;
+  }
+  nav a {
+    font-size: 11px; color: var(--muted);
+    text-decoration: none; text-align: center;
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    text-transform: uppercase; letter-spacing: 0.6px;
+    transition: color 0.2s;
+  }
+  nav a.active { color: var(--green); }
+  nav a svg { width: 20px; height: 20px; }
+
+  /* ── tooltip ── */
+  .tooltip {
+    position: fixed;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 8px 12px;
+    font-size: 12px;
+    color: var(--text);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 100;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>WHOOP</h1>
+    <p>Monday, March 23, 2026</p>
+  </div>
+  <div class="avatar">U1</div>
+</header>
+
+<!-- Recovery Ring -->
+<div class="ring-card">
+  <div class="ring-wrap">
+    <svg id="ring-svg" width="130" height="130" viewBox="0 0 130 130"></svg>
+    <div class="ring-label">
+      <div class="score" id="score-text" style="color: var(--green)">—</div>
+      <div class="sub">Recovery</div>
+    </div>
+  </div>
+  <div class="ring-meta">
+    <h2 id="recovery-label">Loading…</h2>
+    <p class="advice" id="recovery-advice">Calculating today's readiness…</p>
+    <div class="pill-row">
+      <span class="pill" id="pill-fitness"></span>
+      <span class="pill" id="pill-sport"></span>
+    </div>
+  </div>
+</div>
+
+<!-- HRV / RHR / Sleep -->
+<div class="metrics-row">
+  <div class="metric-card green">
+    <div class="label">HRV</div>
+    <div class="val" id="hrv-val">—</div>
+    <div class="unit">ms</div>
+    <div class="delta up" id="hrv-delta">↑ vs baseline</div>
+  </div>
+  <div class="metric-card amber">
+    <div class="label">Resting HR</div>
+    <div class="val" id="rhr-val">—</div>
+    <div class="unit">bpm</div>
+    <div class="delta" id="rhr-delta"></div>
+  </div>
+  <div class="metric-card purple">
+    <div class="label">Sleep</div>
+    <div class="val" id="sleep-val">—</div>
+    <div class="unit">hours</div>
+    <div class="delta" id="sleep-delta"></div>
+  </div>
+</div>
+
+<!-- Sleep Stages -->
+<div class="sleep-card">
+  <div class="card-title">Sleep stages</div>
+  <div class="sleep-bar-track" id="sleep-bar"></div>
+  <div class="sleep-legend">
+    <div class="legend-item"><div class="legend-dot" style="background:#7c73e6"></div>Light</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#4a3db8"></div>REM</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#27207a"></div>Deep</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#333355"></div>Wake</div>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);margin-top:12px;gap:6px" id="stage-vals"></div>
+</div>
+
+<!-- 7-day Recovery Sparkline -->
+<div class="sparkline-card">
+  <div class="spark-header">
+    <div class="card-title" style="margin:0">7-day recovery trend</div>
+    <span id="avg-label"></span>
+  </div>
+  <svg id="sparkline-svg" height="80"></svg>
+</div>
+
+<!-- Day Strain -->
+<div class="strain-card">
+  <div class="card-title">Day strain</div>
+  <div class="strain-row">
+    <span class="strain-val" id="strain-val">—</span>
+    <span class="strain-max">/ 21 max</span>
+  </div>
+  <div class="strain-track">
+    <div class="strain-fill" id="strain-fill" style="width:0%"></div>
+  </div>
+  <div class="strain-zones">
+    <span>Recovery</span><span>Active</span><span>Hard</span><span>All Out</span>
+  </div>
+</div>
+
+<!-- HR Zones -->
+<div class="zone-card">
+  <div class="card-title">HR zones (today's workout)</div>
+  <div class="zone-rows" id="zone-rows"></div>
+</div>
+
+<div class="tooltip" id="tooltip"></div>
+
+<nav>
+  <a href="#" class="active">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+      <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+    </svg>Home
+  </a>
+  <a href="#">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+      <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/>
+      <path d="M23 21v-2a4 4 0 00-3-3.87m-4-12a4 4 0 010 7.75"/>
+    </svg>Sleep
+  </a>
+  <a href="#">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+    </svg>Workout
+  </a>
+  <a href="#">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+      <circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 10-16 0"/>
+    </svg>Profile
+  </a>
+</nav>
+
+<script>
+// ── Sample data derived from the dataset (USER_00001, recent days) ──
+const data = {
+  user: { age: 56, gender: 'Female', fitness: 'Beginner', sport: 'Weight Training' },
+  today: {
+    recovery: 71,
+    hrv: 105.7,
+    hrv_baseline: 101,
+    rhr: 57.5,
+    rhr_baseline: 59,
+    strain: 10.38,
+    sleep_hours: 6.33,
+    sleep_efficiency: 78.3,
+    light_pct: 0.40,
+    rem_pct: 0.22,
+    deep_pct: 0.15,
+    wake_pct: 0.23,
+    hr_zones: [
+      { z:'Z1', min:11.9, color:'#4a9eff' },
+      { z:'Z2', min:18.0, color:'#34c89a' },
+      { z:'Z3', min:15.9, color:'#f5a623' },
+      { z:'Z4', min:11.6, color:'#ff7c44' },
+      { z:'Z5', min:4.6,  color:'#ff5a5a' },
+    ]
+  },
+  week: [
+    { day:'Mon', score:57.8 },
+    { day:'Tue', score:62.6 },
+    { day:'Wed', score:81.5 },
+    { day:'Thu', score:55.0 },
+    { day:'Fri', score:71.0 },
+    { day:'Sat', score:68.2 },
+    { day:'Sun', score:74.3 },
+  ]
+};
+
+const d = data.today;
+const tooltip = document.getElementById('tooltip');
+
+// ── Recovery ring (D3 arc) ──
+(function buildRing() {
+  const score = data.today.recovery;
+  const pct   = score / 100;
+  const color = score >= 67 ? 'var(--green)' : score >= 34 ? 'var(--amber)' : 'var(--red)';
+  const r = 52, cx = 65, cy = 65, sw = 9;
+  const tau = 2 * Math.PI;
+  const startAngle = -Math.PI / 2;
+  const endAngle   = startAngle + tau * pct;
+
+  const arc = d3.arc()
+    .innerRadius(r - sw)
+    .outerRadius(r)
+    .startAngle(startAngle)
+    .cornerRadius(sw / 2);
+
+  const svg = d3.select('#ring-svg');
+
+  // Track
+  svg.append('path')
+    .datum({ endAngle: startAngle + tau })
+    .attr('d', arc.endAngle(startAngle + tau))
+    .attr('transform', `translate(${cx},${cy})`)
+    .attr('fill', 'rgba(255,255,255,0.06)');
+
+  // Fill — animated
+  const fill = svg.append('path')
+    .datum({ endAngle: startAngle })
+    .attr('transform', `translate(${cx},${cy})`)
+    .attr('fill', color);
+
+  fill.transition().duration(1200).ease(d3.easeCubicOut)
+    .attrTween('d', function(d) {
+      const interp = d3.interpolate(d.endAngle, endAngle);
+      return t => { d.endAngle = interp(t); return arc(d); };
+    });
+
+  // Score text
+  const scoreEl = document.getElementById('score-text');
+  scoreEl.style.color = color;
+  d3.transition().duration(1200).ease(d3.easeCubicOut)
+    .tween('score', () => {
+      const i = d3.interpolateRound(0, score);
+      return t => { scoreEl.textContent = i(t); };
+    });
+
+  // Labels
+  const label  = score >= 67 ? 'Ready to train' : score >= 34 ? 'Moderate' : 'Rest today';
+  const advice = score >= 67
+    ? 'Your body is primed for a high-effort session today.'
+    : score >= 34
+    ? 'Consider a moderate session — listen to your body.'
+    : 'Prioritise recovery. Avoid high-strain activities.';
+
+  document.getElementById('recovery-label').textContent = label;
+  document.getElementById('recovery-advice').textContent = advice;
+  document.getElementById('pill-fitness').textContent = data.user.fitness;
+  document.getElementById('pill-sport').textContent   = data.user.sport;
+})();
+
+// ── Metric cards ──
+(function buildMetrics() {
+  const hrv  = d.hrv;
+  const rhr  = d.rhr;
+  const slp  = d.sleep_hours;
+
+  document.getElementById('hrv-val').textContent   = Math.round(hrv);
+  document.getElementById('rhr-val').textContent   = Math.round(rhr);
+  document.getElementById('sleep-val').textContent = slp.toFixed(1);
+
+  const hrvDelta = hrv - d.hrv_baseline;
+  const rhrDelta = rhr - d.rhr_baseline;
+
+  const hrvEl = document.getElementById('hrv-delta');
+  hrvEl.textContent = (hrvDelta >= 0 ? '↑ +' : '↓ ') + Math.abs(Math.round(hrvDelta)) + 'ms vs base';
+  hrvEl.className   = 'delta ' + (hrvDelta >= 0 ? 'up' : 'down');
+
+  const rhrEl = document.getElementById('rhr-delta');
+  rhrEl.textContent = (rhrDelta <= 0 ? '↓ ' : '↑ +') + Math.abs(Math.round(rhrDelta)) + ' bpm vs base';
+  rhrEl.className   = 'delta ' + (rhrDelta <= 0 ? 'up' : 'down');
+
+  const slpEl = document.getElementById('sleep-delta');
+  const slpDiff = slp - 8;
+  slpEl.textContent = (slpDiff >= 0 ? '+' : '') + slpDiff.toFixed(1) + 'h vs 8h goal';
+  slpEl.className   = 'delta ' + (slpDiff >= -0.5 ? 'up' : 'down');
+})();
+
+// ── Sleep bar ──
+(function buildSleepBar() {
+  const bar = document.getElementById('sleep-bar');
+  const segs = [
+    { pct: d.light_pct, color: '#7c73e6' },
+    { pct: d.rem_pct,   color: '#4a3db8' },
+    { pct: d.deep_pct,  color: '#27207a' },
+    { pct: d.wake_pct,  color: '#333355' },
+  ];
+  segs.forEach(s => {
+    const div = document.createElement('div');
+    div.style.width = (s.pct * 100) + '%';
+    div.style.background = s.color;
+    bar.appendChild(div);
+  });
+
+  const labels = ['Light', 'REM', 'Deep', 'Wake'];
+  const container = document.getElementById('stage-vals');
+  segs.forEach((s, i) => {
+    const el = document.createElement('div');
+    el.style.cssText = 'font-size:11px;color:var(--muted);text-align:center';
+    el.innerHTML = `<div style="color:${s.color};font-weight:700;font-size:14px">${(s.pct * d.sleep_hours).toFixed(1)}h</div>${labels[i]}`;
+    container.appendChild(el);
+  });
+})();
+
+// ── Sparkline (D3) ──
+(function buildSparkline() {
+  const svg   = d3.select('#sparkline-svg');
+  const W     = document.getElementById('sparkline-svg').parentElement.clientWidth - 44;
+  const H     = 80;
+  const days  = data.week;
+  const avg   = d3.mean(days, d => d.score);
+  document.getElementById('avg-label').textContent = `Avg ${Math.round(avg)}`;
+
+  svg.attr('width', W + 44).attr('viewBox', `0 0 ${W+44} ${H}`);
+
+  const x = d3.scalePoint()
+    .domain(days.map(d => d.day))
+    .range([0, W]);
+
+  const y = d3.scaleLinear()
+    .domain([0, 100])
+    .range([H - 12, 4]);
+
+  // Gradient fill under the line
+  const defs = svg.append('defs');
+  const grad = defs.append('linearGradient')
+    .attr('id', 'spark-grad')
+    .attr('x1', '0').attr('y1', '0')
+    .attr('x2', '0').attr('y2', '1');
+  grad.append('stop').attr('offset', '0%')
+    .attr('stop-color', 'var(--green)').attr('stop-opacity', 0.25);
+  grad.append('stop').attr('offset', '100%')
+    .attr('stop-color', 'var(--green)').attr('stop-opacity', 0.00);
+
+  const area = d3.area()
+    .x(d => x(d.day))
+    .y0(H - 12)
+    .y1(d => y(d.score))
+    .curve(d3.curveCatmullRom);
+
+  const line = d3.line()
+    .x(d => x(d.day))
+    .y(d => y(d.score))
+    .curve(d3.curveCatmullRom);
+
+  const g = svg.append('g').attr('transform', 'translate(0,0)');
+
+  g.append('path')
+    .datum(days)
+    .attr('d', area)
+    .attr('fill', 'url(#spark-grad)');
+
+  const path = g.append('path')
+    .datum(days)
+    .attr('fill', 'none')
+    .attr('stroke', 'var(--green)')
+    .attr('stroke-width', 2)
+    .attr('stroke-linecap', 'round')
+    .attr('d', line);
+
+  // Animate line draw
+  const len = path.node().getTotalLength();
+  path.attr('stroke-dasharray', len)
+    .attr('stroke-dashoffset', len)
+    .transition().duration(1200).ease(d3.easeCubicOut)
+    .attr('stroke-dashoffset', 0);
+
+  // Dots + labels
+  g.selectAll('circle').data(days).join('circle')
+    .attr('cx', d => x(d.day))
+    .attr('cy', d => y(d.score))
+    .attr('r', 3)
+    .attr('fill', 'var(--green)')
+    .attr('stroke', 'var(--bg)')
+    .attr('stroke-width', 1.5)
+    .on('mousemove', function(event, d) {
+      tooltip.style.opacity = 1;
+      tooltip.innerHTML = `<strong>${d.day}</strong>: ${Math.round(d.score)} recovery`;
+      tooltip.style.left = (event.clientX + 12) + 'px';
+      tooltip.style.top  = (event.clientY - 28) + 'px';
+    })
+    .on('mouseleave', () => tooltip.style.opacity = 0);
+
+  // Day labels
+  g.selectAll('.day-label').data(days).join('text')
+    .attr('class', 'day-label')
+    .attr('x', d => x(d.day))
+    .attr('y', H)
+    .attr('text-anchor', 'middle')
+    .attr('font-size', 10)
+    .attr('fill', 'var(--muted)')
+    .text(d => d.day);
+})();
+
+// ── Strain bar ──
+(function buildStrain() {
+  const strain = d.strain;
+  document.getElementById('strain-val').textContent = strain.toFixed(1);
+  const pct = (strain / 21) * 100;
+  setTimeout(() => {
+    document.getElementById('strain-fill').style.width = pct + '%';
+  }, 300);
+})();
+
+// ── HR zone bars (D3) ──
+(function buildZones() {
+  const zones = d.hr_zones;
+  const maxMin = d3.max(zones, z => z.min);
+  const container = document.getElementById('zone-rows');
+
+  zones.forEach(z => {
+    const row = document.createElement('div');
+    row.className = 'zone-row';
+
+    const label = document.createElement('div');
+    label.className = 'zlabel';
+    label.textContent = z.z;
+
+    const track = document.createElement('div');
+    track.className = 'zone-track';
+    track.style.flex = '1';
+
+    const fill = document.createElement('div');
+    fill.className = 'zone-bar';
+    fill.style.cssText = `background:${z.color};width:0%`;
+    track.appendChild(fill);
+
+    const mins = document.createElement('div');
+    mins.className = 'zmin';
+    mins.textContent = z.min.toFixed(0) + 'm';
+
+    row.appendChild(label);
+    row.appendChild(track);
+    row.appendChild(mins);
+    container.appendChild(row);
+
+    setTimeout(() => {
+      fill.style.width = ((z.min / maxMin) * 100) + '%';
+    }, 200);
+  });
+})();
+</script>
+</body>
+</html>
